@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 
 /// <summary>
 /// Methods which help bridge and contain the differences between Type and TypeInfo.
@@ -36,22 +38,43 @@ static class NewReflectionExtensions
 #endif
     }
 
+    static readonly Dictionary<Type, bool> isFromLocalAssembly = new Dictionary<Type, bool>();
+    static readonly ReaderWriterLockSlim rwLock = new ReaderWriterLockSlim();
+
     public static bool IsFromLocalAssembly(this Type type)
     {
-        var assemblyName = type.GetAssembly().GetName().Name;
-
+        rwLock.EnterUpgradeableReadLock();
         try
         {
+            bool value;
+            if (!isFromLocalAssembly.TryGetValue(type, out value))
+            {
+                var assemblyName = type.GetAssembly().GetName().Name;
+                rwLock.EnterWriteLock();
+                try
+                {
 #if PLATFORM_DOTNET
             Assembly.Load(new AssemblyName { Name = assemblyName });
 #else
-            Assembly.Load(assemblyName);
+                    Assembly.Load(assemblyName);
 #endif
-            return true;
+                    value = true;
+                }
+                catch
+                {
+                    value = false;
+                }
+                finally
+                {
+                    isFromLocalAssembly[type] = value;
+                    rwLock.ExitWriteLock();
+                }
+            }
+            return value;
         }
-        catch
+        finally
         {
-            return false;
+            rwLock.ExitUpgradeableReadLock();
         }
     }
 

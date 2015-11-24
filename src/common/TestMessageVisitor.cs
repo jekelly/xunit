@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using Xunit.Abstractions;
 
@@ -49,51 +50,75 @@ namespace Xunit
             return true;
         }
 
+        private static Dictionary<Type, List<Func<IMessageSinkMessage, bool>>> messageHandlers = new Dictionary<Type, List<Func<IMessageSinkMessage, bool>>>();
+
+        private void AddVisitAction<T>(IList<Func<IMessageSinkMessage, bool>> actions, 
+            IMessageSinkMessage message, Func<TestMessageVisitor, T, bool> func) where T : class, IMessageSinkMessage
+        {
+            T messageT = message as T;
+            if (messageT != null)
+            {
+                actions.Add((m) => func(this, (T)m));
+            }
+        }
+
         /// <inheritdoc/>
         public virtual bool OnMessage(IMessageSinkMessage message)
         {
-            return
+            Type messageType = message.GetType();
+            List<Func<IMessageSinkMessage, bool>> actions;
+            if (!messageHandlers.TryGetValue(messageType, out actions))
+            {
+                actions = new List<Func<IMessageSinkMessage, bool>>();
 #if !XUNIT_FRAMEWORK
-                DoVisit<ITestAssemblyDiscoveryFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestAssemblyDiscoveryStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestAssemblyExecutionFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestAssemblyExecutionStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestExecutionSummary>(message, (t, m) => t.Visit(m)) &&
+                this.AddVisitAction<ITestAssemblyDiscoveryFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestAssemblyDiscoveryStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestAssemblyExecutionFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestAssemblyExecutionStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestExecutionSummary>(actions, message, (t, m) => t.Visit(m));
 #endif
-                DoVisit<IAfterTestFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<IAfterTestStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<IBeforeTestFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<IBeforeTestStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<IDiagnosticMessage>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<IDiscoveryCompleteMessage>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<IErrorMessage>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestAssemblyCleanupFailure>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestAssemblyFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestAssemblyStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestCaseCleanupFailure>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestCaseDiscoveryMessage>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestCaseFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestOutput>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestCaseStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestClassCleanupFailure>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestClassConstructionFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestClassConstructionStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestClassDisposeFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestClassDisposeStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestClassFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestClassStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestCleanupFailure>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestCollectionCleanupFailure>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestCollectionFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestCollectionStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestFailed>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestMethodCleanupFailure>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestMethodFinished>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestMethodStarting>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestPassed>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestSkipped>(message, (t, m) => t.Visit(m)) &&
-                DoVisit<ITestStarting>(message, (t, m) => t.Visit(m));
+                this.AddVisitAction<IAfterTestFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<IAfterTestStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<IBeforeTestFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<IBeforeTestStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<IDiagnosticMessage>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<IDiscoveryCompleteMessage>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<IErrorMessage>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestAssemblyCleanupFailure>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestAssemblyFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestAssemblyStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestCaseCleanupFailure>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestCaseDiscoveryMessage>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestCaseFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestOutput>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestCaseStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestClassCleanupFailure>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestClassConstructionFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestClassConstructionStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestClassDisposeFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestClassDisposeStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestClassFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestClassStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestCleanupFailure>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestCollectionCleanupFailure>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestCollectionFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestCollectionStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestFailed>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestMethodCleanupFailure>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestMethodFinished>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestMethodStarting>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestPassed>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestSkipped>(actions, message, (t, m) => t.Visit(m));
+                this.AddVisitAction<ITestStarting>(actions, message, (t, m) => t.Visit(m));
+                messageHandlers.Add(messageType, actions);
+            }
+            bool retValue = true;
+            foreach (var action in actions)
+            {
+                retValue = retValue && action(message);
+            }
+            return retValue;
         }
 
 #if !XUNIT_FRAMEWORK

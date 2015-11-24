@@ -2,11 +2,49 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using Xunit.Abstractions;
 using Xunit.Serialization;
 
 namespace Xunit.Sdk
 {
+    static class AssemblyNameHelper
+    {
+        private static readonly Dictionary<Assembly, string> cache = new Dictionary<Assembly, string>();
+        private static readonly ReaderWriterLockSlim rwLock = new ReaderWriterLockSlim();
+
+        public static string GetAssemblyName(Assembly assembly)
+        {
+            rwLock.EnterUpgradeableReadLock();
+            try
+            {
+                string retValue;
+                if (!cache.TryGetValue(assembly, out retValue))
+                {
+                    retValue = assembly.GetName().Name;
+                    rwLock.EnterWriteLock();
+                    try
+                    {
+                        cache[assembly] = retValue;
+                    }
+                    finally
+                    {
+                        rwLock.ExitWriteLock();
+                    }
+                }
+                return retValue;
+            }
+            catch
+            {
+            }
+            finally
+            {
+                rwLock.ExitUpgradeableReadLock();
+            }
+            return string.Empty;
+        }
+    }
+
     /// <summary>
     /// Serializes and de-serializes objects
     /// </summary>
@@ -169,7 +207,7 @@ namespace Xunit.Sdk
             catch { }
 #else
             // Support both long name ("assembly, version=x.x.x.x, etc.") and short name ("assembly")
-            var assembly = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.FullName == assemblyName || a.GetName().Name == assemblyName);
+            var assembly = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.FullName == assemblyName || AssemblyNameHelper.GetAssemblyName(a) == assemblyName);
             if (assembly == null)
             {
                 try
