@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using Xunit.Abstractions;
 
 namespace Xunit.Sdk
@@ -50,10 +51,35 @@ namespace Xunit.Sdk
             }
         }
 
+        static readonly Dictionary<Type, AttributeUsageAttribute> usageCache = new Dictionary<Type, AttributeUsageAttribute>();
+        static readonly ReaderWriterLockSlim usageLock = new ReaderWriterLockSlim();
+
         internal static AttributeUsageAttribute GetAttributeUsage(Type attributeType)
         {
-            return (AttributeUsageAttribute)attributeType.GetTypeInfo().GetCustomAttributes(typeof(AttributeUsageAttribute), true).FirstOrDefault()
-                ?? DefaultAttributeUsageAttribute;
+            usageLock.EnterUpgradeableReadLock();
+            try
+            {
+                AttributeUsageAttribute value;
+                if (!usageCache.TryGetValue(attributeType, out value))
+                {
+                    value = (AttributeUsageAttribute)attributeType.GetTypeInfo().GetCustomAttributes(typeof(AttributeUsageAttribute), true).FirstOrDefault()
+                        ?? DefaultAttributeUsageAttribute;
+                    usageLock.EnterWriteLock();
+                    try
+                    {
+                        usageCache[attributeType] = value;
+                    }
+                    finally
+                    {
+                        usageLock.ExitWriteLock();
+                    }
+                }
+                return value;
+            }
+            finally
+            {
+                usageLock.ExitUpgradeableReadLock();
+            }
         }
 
         /// <inheritdoc/>
@@ -75,6 +101,37 @@ namespace Xunit.Sdk
             return GetCustomAttributes(type, attributeType, GetAttributeUsage(attributeType));
         }
 
+        static readonly Dictionary<Type, IEnumerable<CustomAttributeData>> attributeCache = new Dictionary<Type, IEnumerable<CustomAttributeData>>();
+        static readonly ReaderWriterLockSlim rwLock = new ReaderWriterLockSlim();
+
+
+        private static IEnumerable<CustomAttributeData> GetCustomAttributesCached(Type type)
+        {
+            rwLock.EnterUpgradeableReadLock();
+            try
+            {
+                IEnumerable<CustomAttributeData> value;
+                if (!attributeCache.TryGetValue(type, out value))
+                {
+                    value = type.GetTypeInfo().CustomAttributes;
+                    rwLock.EnterWriteLock();
+                    try
+                    {
+                        attributeCache[type] = value;
+                    }
+                    finally
+                    {
+                        rwLock.ExitWriteLock();
+                    }
+                }
+                return value;
+            }
+            finally
+            {
+                rwLock.ExitUpgradeableReadLock();
+            }
+        }
+
         internal static IEnumerable<IAttributeInfo> GetCustomAttributes(Type type, Type attributeType, AttributeUsageAttribute attributeUsage)
         {
             IEnumerable<IAttributeInfo> results = Enumerable.Empty<IAttributeInfo>();
@@ -82,7 +139,7 @@ namespace Xunit.Sdk
             if (type != null)
             {
                 List<ReflectionAttributeInfo> list = null;
-                foreach (CustomAttributeData attr in type.GetTypeInfo().CustomAttributes)
+                foreach (CustomAttributeData attr in GetCustomAttributesCached(type))
                 {
                     if (attributeType.GetTypeInfo().IsAssignableFrom(attr.AttributeType.GetTypeInfo()))
                     {
